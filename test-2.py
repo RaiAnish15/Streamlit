@@ -11,5 +11,5 @@ with colA:
 with colB:
     level = st.selectbox("Experience level", ["Beginner", "Intermediate", "Advanced"])
 
-st.write(f"🎯 You are **{age}** years old and **{level}** with Streamlit.")
+st.write(f"🎯 You are {age} years old and {level} with Streamlit.")
 st.info("Streamlit re-runs top-to-bottom on every interaction.")
