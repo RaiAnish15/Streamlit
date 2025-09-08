@@ -6,6 +6,6 @@ st.set_page_config(page_title="Class 1 – Streamlit Basics")
 st.title("Hello Streamlit 👋")
 st.write("This is test-1")
 
-name = st.text_input("Enter your name:", "Anish")
+name = st.text_input("Enter your name:", "Enter Your Name")
 st.write(f"Welcome, **{name}**!")
 
