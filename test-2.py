@@ -12,7 +12,8 @@ with colB:
     level = st.selectbox("Experience level", ["Beginner", "Intermediate", "Advanced"])
 
 st.write(f"🎯 You are **{age}** years old and {level} with Streamlit.")
-st.info("Streamlit re-runs top-to-bottom on every interaction.")
+
+st.info("This is a info message (blue box).")
 st.success("This is a success message (green box).")
 st.warning("This is a warning message (yellow box).")
 st.error("This is an error message (red box).")
