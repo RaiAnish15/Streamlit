@@ -1,1 +1,11 @@
+# app.py
+import streamlit as st
+
+st.set_page_config(page_title="Class 1 – Streamlit Basics", layout="wide")
+
+st.title("Hello Streamlit 👋")
+st.write("This is our very first app — a Python script that renders a UI.")
+
+name = st.text_input("Enter your name:", "Anish")
+st.write(f"Welcome, **{name}**!")
 
