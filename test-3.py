@@ -8,7 +8,7 @@ st.title("Data ➜ Table ➜ Chart")
 # Tiny demo DataFrame
 df = pd.DataFrame({
     "x": np.arange(1, 21),
-    "y": np.random.randn(20).cumsum()
+    "y": np.random.randn(20)
 })
 
 view = st.radio("Pick a chart type", ["Line", "Bar"], horizontal=True)
