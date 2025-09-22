@@ -2,6 +2,7 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
+import altair as alt
 
 # ----------------- Utilities -----------------
 RESERVED_COLS = {"StudentID","Name","Batch","Class","Year","Gender"}
@@ -21,7 +22,6 @@ def detect_subject_columns(df):
     # Subjects = numeric columns not in reserved set
     numeric_cols = df.select_dtypes(include=["number"]).columns
     subject_cols = [c for c in numeric_cols if c not in RESERVED_COLS]
-    # If Year is numeric, it's excluded by reserved set
     return subject_cols
 
 def compute_yearly_percentage(df, subject_cols):
@@ -36,6 +36,7 @@ def compute_trend_line(x, y, tol=0.05):
     y = np.asarray(y, dtype=float)
     if len(x) < 2 or np.allclose(y, y[0]):
         slope = 0.0
+        # return a flat line at mean for overlay (so it renders)
         y_fit = np.full_like(y, np.nan, dtype=float)
         label = "Flat →"
         return y_fit, slope, label
@@ -50,13 +51,91 @@ def compute_trend_line(x, y, tol=0.05):
         label = "Flat →"
     return y_fit, slope, label
 
-def plot_with_trend(df_xy, x_col, y_col, title):
-    st.subheader(title)
-    st.line_chart(df_xy.set_index(x_col)[y_col])
+def layered_line_with_trend(df_xy, x_col, y_col, title, data_color="#1f77b4", trend_color="#ff7f0e"):
+    """
+    Build a single Altair chart with the data line and its linear-fit trend line overlaid.
+    Colors can be customized; default uses contrasting colors.
+    """
+    # Ensure sorted by x
+    df_xy = df_xy.sort_values(x_col).copy()
+    # Compute trend values aligned to x
     y_fit, slope, label = compute_trend_line(df_xy[x_col].values, df_xy[y_col].values)
-    overlay = pd.DataFrame({x_col: df_xy[x_col].values, "Trend (linear fit)": y_fit}).set_index(x_col)
-    st.line_chart(overlay)
+    df_xy["TrendFit"] = y_fit
+
+    base = alt.Chart(df_xy).encode(
+        x=alt.X(x_col, title=x_col)
+    )
+
+    data_line = base.mark_line(strokeWidth=3, color=data_color).encode(
+        y=alt.Y(y_col, title=y_col),
+        tooltip=[x_col, y_col]
+    )
+
+    trend_line = base.mark_line(strokeWidth=3, color=trend_color, strokeDash=[6,4]).encode(
+        y="TrendFit:Q",
+        tooltip=[x_col, alt.Tooltip("TrendFit:Q", title="Trend")]
+    )
+
+    chart = alt.layer(data_line, trend_line).properties(
+        title=title, height=350
+    ).interactive()
+
+    # Caption with slope & label
+    st.altair_chart(chart, use_container_width=True)
     st.caption(f"Trend: **{label}** (slope ≈ {slope:.3f} per year)")
+
+def layered_multi_subject_with_trends(avg_df, subjects, x_col="Year"):
+    """
+    Multi-subject overlay: one line per subject + each subject's trend line in matching color.
+    """
+    if not subjects:
+        st.info("Select at least one subject.")
+        return
+
+    # Pivot wide for easier per-subject trend
+    wide = avg_df.pivot(index=x_col, columns="Subject", values="Average").sort_index()
+
+    # Build a long dataframe with trend per subject
+    layers = []
+    color_scale = alt.Scale(scheme="tableau10")  # distinct, high-contrast palette
+
+    # Melt back to long for data lines
+    long_data = wide.reset_index().melt(id_vars=[x_col], var_name="Subject", value_name="Average")
+    long_data = long_data[long_data["Subject"].isin(subjects)]
+
+    # Data lines
+    data_lines = alt.Chart(long_data).mark_line(strokeWidth=3).encode(
+        x=alt.X(x_col, title=x_col),
+        y=alt.Y("Average:Q", title="Average Marks"),
+        color=alt.Color("Subject:N", scale=color_scale),
+        tooltip=[x_col, "Subject", alt.Tooltip("Average:Q", format=".2f")]
+    )
+
+    # Trend lines: compute per subject
+    trend_rows = []
+    for sub in subjects:
+        y = wide[sub].dropna()
+        if len(y) == 0:
+            continue
+        years = y.index.values.astype(float)
+        y_fit, slope, label = compute_trend_line(years, y.values.astype(float))
+        tmp = pd.DataFrame({x_col: years, "Trend": y_fit, "Subject": sub})
+        trend_rows.append(tmp)
+    trend_df = pd.concat(trend_rows, ignore_index=True) if trend_rows else pd.DataFrame(columns=[x_col,"Trend","Subject"])
+
+    trend_lines = alt.Chart(trend_df).mark_line(strokeDash=[6,4], strokeWidth=3).encode(
+        x=alt.X(x_col, title=x_col),
+        y=alt.Y("Trend:Q", title="Average Marks"),
+        color=alt.Color("Subject:N", scale=color_scale),
+        tooltip=[x_col, "Subject", alt.Tooltip("Trend:Q", title="Trend", format=".2f")]
+    )
+
+    chart = alt.layer(data_lines, trend_lines).properties(
+        title="Average Yearly Marks (Selected Subjects) + Trend",
+        height=380
+    ).interactive()
+
+    st.altair_chart(chart, use_container_width=True)
 
 # ----------------- App -----------------
 st.set_page_config(page_title="Student Performance Dashboard", layout="wide")
@@ -75,11 +154,10 @@ if missing:
     st.error(f"Missing required columns: {missing}")
     st.stop()
 
-# Detect subjects automatically
+# Detect subjects automatically & compute yearly percentage (mean across detected subjects)
 subjects = detect_subject_columns(df)
 if len(subjects) == 0:
     st.warning("No subject columns detected (numeric, non-reserved). Please check your CSV.")
-# Compute yearly percentage = mean across all detected subject columns
 df = compute_yearly_percentage(df.copy(), subjects)
 
 mode = st.radio("View by:", ["Students", "Subjects", "Gender"], horizontal=True)
@@ -96,22 +174,27 @@ if mode == "Students":
         show_pct = st.selectbox("Show Yearly Percentage Trend?", ["Yes", "No"], index=0)
 
     sdf = df[df["Name"] == student].sort_values("Year")
-    # Subject chart
+
+    # Subject chart (data + trend in one plot)
     if subject in sdf.columns:
-        plot_with_trend(
+        layered_line_with_trend(
             sdf.rename(columns={subject: "Marks"})[["Year","Marks"]],
             x_col="Year", y_col="Marks",
-            title=f"{student} — {subject} (Yearly Marks + Trend)"
+            title=f"{student} — {subject} (Yearly Marks with Trend)",
+            data_color="#1f77b4",   # blue
+            trend_color="#ff7f0e"   # orange (contrasting)
         )
     else:
         st.info("Selected subject not found in the uploaded file.")
 
     st.divider()
     if show_pct == "Yes":
-        plot_with_trend(
+        layered_line_with_trend(
             sdf[["Year","Percentage"]],
             x_col="Year", y_col="Percentage",
-            title=f"{student} — Yearly Percentage (mean of detected subjects) + Trend"
+            title=f"{student} — Yearly Percentage (mean of detected subjects) with Trend",
+            data_color="#2ca02c",    # green
+            trend_color="#d62728"    # red
         )
 
 # ----------------- Subjects -----------------
@@ -121,7 +204,7 @@ elif mode == "Subjects":
         st.info("No subject columns detected.")
     else:
         chosen = st.multiselect("Select Subject(s)", subjects, default=subjects[:2])
-        # Average by Year for each subject
+        # Average by Year for each subject (long df)
         avg_frames = []
         for sub in chosen:
             tmp = df.groupby("Year")[sub].mean().reset_index()
@@ -130,18 +213,7 @@ elif mode == "Subjects":
             avg_frames.append(tmp)
         if avg_frames:
             avg_df = pd.concat(avg_frames, ignore_index=True)
-            wide = avg_df.pivot(index="Year", columns="Subject", values="Average").sort_index()
-            st.line_chart(wide)
-            # Trend table
-            rows = []
-            for sub in chosen:
-                y = wide[sub].dropna()
-                if len(y) == 0: 
-                    continue
-                y_fit, slope, label = compute_trend_line(y.index.values, y.values)
-                rows.append({"Subject": sub, "Trend": label, "Slope (marks/year)": round(float(slope),3)})
-            if rows:
-                st.table(pd.DataFrame(rows))
+            layered_multi_subject_with_trends(avg_df, chosen, x_col="Year")
         else:
             st.info("Select at least one subject to view trends.")
 
@@ -154,21 +226,59 @@ else:
         st.info("No subject columns detected.")
     else:
         subj = st.selectbox("Select Subject", subjects)
+
+        # Average marks by Year and Gender (long)
         gdf = (
             df.groupby(["Year","Gender"])[subj]
-            .mean().reset_index().rename(columns={subj: "Average"})
+            .mean()
+            .reset_index()
+            .rename(columns={subj: "Average"})
+            .sort_values(["Gender","Year"])
         )
-        wide = gdf.pivot(index="Year", columns="Gender", values="Average").sort_index()
-        st.subheader(f"Average Yearly {subj} Marks by Gender")
-        st.line_chart(wide)
 
-        # Trend per gender
-        rows = []
-        for gender in wide.columns:
-            y = wide[gender].dropna()
-            if len(y) == 0:
+        # Build layers: data lines (Male black, Female pink) + trend lines same colors
+        # Data lines
+        data_line = alt.Chart(gdf).mark_line(strokeWidth=3).encode(
+            x=alt.X("Year:Q", title="Year"),
+            y=alt.Y("Average:Q", title=f"Average {subj} Marks"),
+            color=alt.Color("Gender:N",
+                            scale=alt.Scale(domain=["Male","Female"],
+                                            range=["black","#ff69b4"])),
+            tooltip=["Year","Gender",alt.Tooltip("Average:Q", format=".2f")]
+        )
+
+        # Compute trend per gender
+        trend_parts = []
+        for gender in ["Male","Female"]:
+            y = gdf[gdf["Gender"]==gender].dropna(subset=["Average"])
+            if len(y) < 2:
                 continue
-            _, slope, label = compute_trend_line(y.index.values, y.values)
-            rows.append({"Gender": gender, "Trend": label, "Slope (marks/year)": round(float(slope),3)})
-        if rows:
-            st.table(pd.DataFrame(rows))
+            years = y["Year"].values.astype(float)
+            y_fit, slope, label = compute_trend_line(years, y["Average"].values.astype(float))
+            trend_parts.append(pd.DataFrame({"Year": years, "Trend": y_fit, "Gender": gender,
+                                             "Slope": slope, "Label": label}))
+        trend_df = pd.concat(trend_parts, ignore_index=True) if trend_parts else pd.DataFrame(columns=["Year","Trend","Gender","Slope","Label"])
+
+        trend_line = alt.Chart(trend_df).mark_line(strokeDash=[6,4], strokeWidth=3).encode(
+            x="Year:Q",
+            y="Trend:Q",
+            color=alt.Color("Gender:N",
+                            scale=alt.Scale(domain=["Male","Female"],
+                                            range=["black","#ff69b4"])),
+            tooltip=["Year","Gender",alt.Tooltip("Trend:Q", title="Trend", format=".2f")]
+        )
+
+        chart = alt.layer(data_line, trend_line).properties(
+            title=f"Average Yearly {subj} Marks by Gender (with Trend)",
+            height=380
+        ).interactive()
+
+        st.altair_chart(chart, use_container_width=True)
+
+        # Show slopes/labels
+        if not trend_df.empty:
+            summary = (trend_df.groupby("Gender")
+                               .agg(Slope=("Slope","first"), Label=("Label","first"))
+                               .reset_index())
+            summary["Slope"] = summary["Slope"].astype(float).round(3)
+            st.table(summary)
