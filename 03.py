@@ -30,33 +30,32 @@ class_data = {
 }
 
 # ---------------------------
-# Sidebar: class selection
+# Sidebar: class & subject selection
 # ---------------------------
 st.sidebar.header("Filters")
 cls_selected = st.sidebar.selectbox("Select Class", ["(None)"] + list(class_data.keys()))
 
-# ---------------------------
-# Show welcome if no class is selected
-# ---------------------------
+# 1) No class → show only welcome
 if cls_selected == "(None)":
-    st.info("👋 Welcome! Please select a class from the sidebar to see student marks.")
+    st.info("👋 Welcome! Please select a class from the sidebar to continue.")
+    st.stop()
+
+# 2) Class selected → load df, but require subject selection before showing anything else
+df = class_data[cls_selected]
+subjects = [c for c in df.columns if c != "Student"]
+subject = st.sidebar.selectbox("Select Subject", ["(None)"] + subjects, index=0)
+
+# If subject not chosen yet → show prompt and stop
+if subject == "(None)":
+    st.info(f"✅ You selected **{cls_selected}**. Now pick a **Subject** from the sidebar to see results.")
     st.stop()
 
 # ---------------------------
-# Load selected class data
+# Now show the rest ONLY after subject is chosen
 # ---------------------------
-df = class_data[cls_selected]
 st.subheader(f"📊 Marks for {cls_selected}")
 st.dataframe(df, use_container_width=True)
 
-# ---------------------------
-# Subject selection
-# ---------------------------
-subject = st.sidebar.selectbox("Select Subject", [c for c in df.columns if c != "Student"])
-
-# ---------------------------
-# Metrics (columns)
-# ---------------------------
 col1, col2, col3 = st.columns(3)
 with col1:
     st.metric("Avg Marks", round(df[subject].mean(), 1))
@@ -65,12 +64,8 @@ with col2:
 with col3:
     st.metric("Min Marks", int(df[subject].min()))
 
-# ---------------------------
-# Tabs for Summary vs Charts
-# ---------------------------
 tab1, tab2 = st.tabs(["Summary", "Chart"])
 with tab1:
     st.write(df.describe().T)
-
 with tab2:
     st.bar_chart(df.set_index("Student")[subject])
