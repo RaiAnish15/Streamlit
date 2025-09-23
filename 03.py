@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 
 st.set_page_config(page_title="Student Dashboard", layout="wide")
-st.title("📚 Multi-Class Student Marks (Fixed Example)")
+st.title("📚 Multi-Class Student Marks Dashboard")
 
 # ---------------------------
 # Fixed datasets for each class
@@ -33,19 +33,30 @@ class_data = {
 # Sidebar: class selection
 # ---------------------------
 st.sidebar.header("Filters")
-cls_selected = st.sidebar.selectbox("Select Class", list(class_data.keys()))
-df = class_data[cls_selected]
+cls_selected = st.sidebar.selectbox("Select Class", ["(None)"] + list(class_data.keys()))
 
 # ---------------------------
-# Show class dataset
+# Show welcome if no class is selected
 # ---------------------------
+if cls_selected == "(None)":
+    st.info("👋 Welcome! Please select a class from the sidebar to see student marks.")
+    st.stop()
+
+# ---------------------------
+# Load selected class data
+# ---------------------------
+df = class_data[cls_selected]
 st.subheader(f"📊 Marks for {cls_selected}")
 st.dataframe(df, use_container_width=True)
 
 # ---------------------------
-# Metrics (columns)
+# Subject selection
 # ---------------------------
 subject = st.sidebar.selectbox("Select Subject", [c for c in df.columns if c != "Student"])
+
+# ---------------------------
+# Metrics (columns)
+# ---------------------------
 col1, col2, col3 = st.columns(3)
 with col1:
     st.metric("Avg Marks", round(df[subject].mean(), 1))
