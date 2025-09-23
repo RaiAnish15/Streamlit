@@ -43,7 +43,7 @@ if cls_selected == "(None)":
 # 2) Class selected → load df, but require subject selection before showing anything else
 df = class_data[cls_selected]
 subjects = [c for c in df.columns if c != "Student"]
-subject = st.sidebar.selectbox("Select Subject", ["(None)"] + subjects, index=0)
+subject = st.sidebar.selectbox("Select Subject", ["(None)"] + subjects)
 
 # If subject not chosen yet → show prompt and stop
 if subject == "(None)":
