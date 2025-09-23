@@ -1,38 +1,65 @@
 import streamlit as st
 import pandas as pd
 
-st.set_page_config(page_title="Layout Demo", layout="wide")
-st.title("📊 Student Marks Dashboard")
+st.set_page_config(page_title="Student Dashboard", layout="wide")
+st.title("📚 Multi-Class Student Marks (Fixed Example)")
 
-# ---------------- Sidebar ----------------
-st.sidebar.header("Filters")
-class_selected = st.sidebar.selectbox("Select Class", ["Class 10", "Class 11", "Class 12"])
-subject_selected = st.sidebar.radio("Subject", ["Math", "Science", "English"], index=0)
-st.sidebar.write("Sidebar is great for filters and global controls!")
-
-# ---------------- Dummy Data ----------------
-data = {
-    "Student": ["Alice", "Bob", "Charlie", "David"],
-    "Math": [85, 70, 90, 60],
-    "Science": [78, 82, 88, 74],
-    "English": [92, 80, 75, 85],
+# ---------------------------
+# Fixed datasets for each class
+# ---------------------------
+class_data = {
+    "Class 10": pd.DataFrame({
+        "Student": ["Alice", "Bob", "Charlie", "David"],
+        "Math": [85, 70, 90, 60],
+        "Science": [78, 82, 88, 74],
+        "English": [92, 80, 75, 85],
+    }),
+    "Class 11": pd.DataFrame({
+        "Student": ["Eva", "Frank", "Grace"],
+        "Math": [88, 67, 95],
+        "Physics": [91, 73, 89],
+        "Chemistry": [84, 69, 92],
+    }),
+    "Class 12": pd.DataFrame({
+        "Student": ["Henry", "Ivy", "Jack", "Karan", "Lily"],
+        "Math": [90, 85, 76, 88, 95],
+        "Physics": [89, 80, 70, 92, 97],
+        "Chemistry": [93, 78, 74, 85, 99],
+        "English": [87, 91, 79, 88, 94],
+    })
 }
-df = pd.DataFrame(data)
 
-# ---------------- Columns ----------------
+# ---------------------------
+# Sidebar: class selection
+# ---------------------------
+st.sidebar.header("Filters")
+cls_selected = st.sidebar.selectbox("Select Class", list(class_data.keys()))
+df = class_data[cls_selected]
+
+# ---------------------------
+# Show class dataset
+# ---------------------------
+st.subheader(f"📊 Marks for {cls_selected}")
+st.dataframe(df, use_container_width=True)
+
+# ---------------------------
+# Metrics (columns)
+# ---------------------------
+subject = st.sidebar.selectbox("Select Subject", [c for c in df.columns if c != "Student"])
 col1, col2, col3 = st.columns(3)
 with col1:
-    st.metric("Total Students", len(df))
+    st.metric("Avg Marks", round(df[subject].mean(), 1))
 with col2:
-    st.metric("Average Marks", round(df[subject_selected].mean(), 1))
+    st.metric("Max Marks", int(df[subject].max()))
 with col3:
-    st.metric("Highest Marks", df[subject_selected].max())
+    st.metric("Min Marks", int(df[subject].min()))
 
-# ---------------- Tabs ----------------
-tab1, tab2 = st.tabs(["Table View", "Summary"])
+# ---------------------------
+# Tabs for Summary vs Charts
+# ---------------------------
+tab1, tab2 = st.tabs(["Summary", "Chart"])
 with tab1:
-    st.subheader(f"Marks in {subject_selected}")
-    st.dataframe(df[["Student", subject_selected]])
+    st.write(df.describe().T)
+
 with tab2:
-    st.subheader("Summary Statistics")
-    st.write(df.describe())
+    st.bar_chart(df.set_index("Student")[subject])
