@@ -14,5 +14,5 @@ st.info("ℹ️ This is an info box (blue). Good for tips or notes.")
 st.success("✅ This is a success box (green). Use it when something worked!")
 st.warning("⚠️ This is a warning box (yellow). Caution, check this step.")
 st.error("❌ This is an error box (red). Something went wrong.")
-st.exception(Exception("Example of an exception (red with traceback)."))
+st.exception("Example of an exception (red with traceback).")
 
