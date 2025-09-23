@@ -11,16 +11,10 @@ show_more = st.checkbox("Show more details")
 
 st.write(f"👋 Hi **{name or 'friend'}**! You selected **{level}** and age **{age}**.")
 
+if show_more:
+    st.success("This is a conditional block controlled by the checkbox.")
+
 with st.expander("Why Streamlit reruns?"):
     st.write("Every widget interaction reruns the script from top to bottom with current widget values.")
 
-# Simulate work + status
-if st.button("Run a tiny task"):
-    with st.status("Working...", expanded=True) as s:
-        for step in ["Loading data", "Cleaning", "Plotting"]:
-            time.sleep(0.4)
-            st.write("•", step)
-        s.update(label="Done!", state="complete")
 
-if show_more:
-    st.success("This is a conditional block controlled by the checkbox.")
