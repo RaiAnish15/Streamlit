@@ -10,4 +10,4 @@ st.markdown("""
 - LaTeX: $\\sigma^2 = \\frac{1}{n}\\sum (x_i - \\bar{x})^2$
 """)
 
-st.info("Tip: Run me with `streamlit run app_01_hello.py`")
+st.info("This is for Information")
