@@ -1,9 +1,9 @@
 import streamlit as st
 
-st.set_page_config(page_title="Hello Streamlit", page_icon="👋", layout="centered")
+st.set_page_config(page_title="Hello Streamlit")
 
-st.title("Hello, Streamlit")
-st.subheader("From Python script → interactive web app")
+st.title("The first code")
+st.subheader("A Basic one")
 st.write("This page demonstrates basic text elements.")
 st.markdown("""
 - **Bold**, *italics*, `code`
