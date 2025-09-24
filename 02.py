@@ -8,9 +8,9 @@ level = st.selectbox("Your experience level", ["Beginner", "Intermediate", "Adva
 age = st.slider("Your age", 10, 70, 25)
 show_more = st.checkbox("Show more details")
 
-st.write(f"👋 Hi **{name or 'friend'}**! You selected **{level}** and age **{age}**.")
+st.write(f"👋 Hi {name or 'friend'}! You selected {level} and age {age}.")
 
-**hey**
+
 if show_more:
     st.success("This is a conditional block controlled by the checkbox.")
 
