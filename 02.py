@@ -1,5 +1,4 @@
 import streamlit as st
-import time
 
 st.set_page_config(page_title="Widgets 101", layout="wide")
 st.title("🎛️ Widgets & Instant Feedback")
