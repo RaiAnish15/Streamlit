@@ -69,7 +69,7 @@ def alt_line(df, x_field, y_field, color_field=None, ydomain=None, title=None,
         chart = chart.mark_line(point=True, color=line_color).encode(**enc)
     return chart.properties(title=title).interactive()
 
-##### MAIN #########
+# ----------------- Sidebar: Upload -----------------
 st.sidebar.header("Upload CSV")
 uploaded = st.sidebar.file_uploader("Upload student marks file", type=["csv"])
 if uploaded is None:
@@ -82,14 +82,14 @@ name_col, year_col, gender_col, subject_cols = detect_columns(df)
 if subject_cols:
     df["_OverallPct"] = df.apply(lambda r: overall_percentage(r, subject_cols), axis=1)
 
-
+# Ensure year is int (no commas)
 if year_col:
     df[year_col] = pd.to_numeric(df[year_col], errors="coerce").dropna().astype(int)
 
 # ----------------- Center Radio -----------------
-col1, col2, col3 = st.columns(3)
+col1, col2, col3 = st.columns([1, 2, 1])
 with col2:
-    mode = st.radio("Choose a view", ["Students", "Subjects", "Gender"], index=0)
+    mode = st.radio("Choose", ["Students", "Subjects", "Gender"], index=1)
 
 # ----------------- Sidebar Controls -----------------
 if mode == "Students":
