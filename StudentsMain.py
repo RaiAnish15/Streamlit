@@ -38,66 +38,66 @@ def y_domain(series: pd.Series, pad=5):
 
 def topper_by_year(df, year_col, name_col, value_col):
     """Return dataframe: Year, Top Student, Score for the given value_col."""
-    # for each year, pick the row with max value_col
     def pick_top(g):
         idx = g[value_col].astype(float).idxmax()
         row = g.loc[idx]
-        return pd.Series({
-            "Top Student": row[name_col],
-            "Score": float(row[value_col])
-        })
+        return pd.Series({"Top Student": row[name_col], "Score": float(row[value_col])})
     out = df.groupby(year_col, as_index=True).apply(pick_top).reset_index()
     out[year_col] = out[year_col].astype(int)
     return out.sort_values(year_col)
 
 def gender_color_map(unique_genders):
     """
-    Return (domain, range) for Altair colors:
-    - boys: black
-    - girls: pink
-    - others: contrasting colors
+    Boys: black (#000000), Girls: pink (#ff4da6), others: contrasting palette.
+    Returns (domain, range) lists for Altair.
     """
-    # Normalize simple Male/Female detection
-    domain, rng = [], []
-    used = set()
+    domain, rng, used = [], [], set()
     def add(g, color):
         domain.append(g); rng.append(color); used.add(g)
 
-    # Try to find male/female labels (case-insensitive)
     low = {g: g.lower() for g in unique_genders}
     male_keys = [g for g in unique_genders if low[g].startswith(("m","boy","male"))]
     female_keys = [g for g in unique_genders if low[g].startswith(("f","girl","female"))]
 
-    # Assign boys (black), girls (pink)
     for g in male_keys:
         if g not in used: add(g, "#000000")
     for g in female_keys:
-        if g not in used: add(g, "#ff4da6")  # pink
+        if g not in used: add(g, "#ff4da6")
 
-    # Contrasting palette for others
     palette = ["#1f77b4", "#ff7f0e", "#2ca02c", "#8c564b", "#9467bd", "#17becf"]
+    p = 0
     for g in unique_genders:
         if g not in used:
-            add(g, palette[len(rng) % len(palette)])
-
+            add(g, palette[p % len(palette)])
+            p += 1
     return domain, rng
 
-def alt_line(df, x, y, color=None, ydomain=None, title=None, color_domain=None, color_range=None):
+def alt_line(df, x_field, y_field, color_field=None, ydomain=None, title=None,
+             color_domain=None, color_range=None, line_color=None):
     """Generic Altair line with integer year axis and optional color mapping."""
-    chart = alt.Chart(df).mark_line(point=True).encode(
-        x=alt.X(x, type="ordinal", axis=alt.Axis(title="Year", format='d')),  # no commas
-        y=alt.Y(y, type="quantitative",
-                scale=alt.Scale(domain=ydomain) if ydomain else alt.Undefined,
-                axis=alt.Axis(title=None)),
-    )
-    if color is not None:
+    base = alt.Chart(df).mark_line(point=True)
+
+    enc = {
+        "x": alt.X(x_field, type="ordinal", axis=alt.Axis(title="Year", format="d")),
+        "y": alt.Y(y_field, type="quantitative",
+                   scale=alt.Scale(domain=ydomain) if ydomain else alt.Undefined,
+                   axis=alt.Axis(title=None)),
+    }
+
+    if color_field:
         if color_domain and color_range:
-            chart = chart.encode(color=alt.Color(color, legend=alt.Legend(title=str(color)),
-                                                 scale=alt.Scale(domain=color_domain, range=color_range)))
+            enc["color"] = alt.Color(color_field, legend=alt.Legend(title=str(color_field)),
+                                     scale=alt.Scale(domain=color_domain, range=color_range))
         else:
-            chart = chart.encode(color=alt.Color(color, legend=alt.Legend(title=str(color))))
+            enc["color"] = alt.Color(color_field, legend=alt.Legend(title=str(color_field)))
+
+    chart = base.encode(**enc)
+    if line_color and not color_field:
+        chart = chart.mark_line(point=True, color=line_color)
+
     if title:
         chart = chart.properties(title=title)
+
     return chart.interactive()
 
 # ----------------- Upload -----------------
@@ -152,20 +152,16 @@ if mode == "Students":
     metric_choice = st.sidebar.selectbox("Plot", options=["— None —", "Overall Percentage"] + subject_cols, index=0)
 
     if student == "— None —":
-        st.info("Select a student in the sidebar to continue.")
-        st.stop()
+        st.info("Select a student in the sidebar to continue."); st.stop()
     if metric_choice == "— None —":
-        st.info("Select **Overall Percentage** or a **Subject** to see a plot.")
-        st.stop()
+        st.info("Select **Overall Percentage** or a **Subject** to see a plot."); st.stop()
 
-    sdf = df[df[name_col].astype(str) == student].copy()
-    sdf = sdf.sort_values(by=year_col)
-
+    sdf = df[df[name_col].astype(str) == student].copy().sort_values(by=year_col)
     plot_col = "_OverallPct" if metric_choice == "Overall Percentage" else metric_choice
     ydom = y_domain(sdf[plot_col], pad=5)
 
     chart_df = sdf[[year_col, plot_col]].rename(columns={year_col: "Year", plot_col: metric_choice})
-    chart = alt_line(chart_df, x="Year:N", y=alt.Y(metric_choice + ":Q"), ydomain=ydom,
+    chart = alt_line(chart_df, x_field="Year", y_field=metric_choice, ydomain=ydom,
                      title=f"{student} — {metric_choice}")
     st.altair_chart(chart, use_container_width=True)
 
@@ -175,7 +171,7 @@ if mode == "Students":
         toppers_overall = topper_by_year(df, year_col, name_col, "_OverallPct")
         st.dataframe(toppers_overall.rename(columns={year_col: "Year"}), hide_index=True, use_container_width=True)
 
-    # Per-year toppers for selected subject (if a subject is chosen)
+    # Per-year toppers for selected subject
     if metric_choice != "Overall Percentage" and metric_choice in subject_cols:
         st.subheader(f"🥇 Per-Year Topper — {metric_choice}")
         toppers_subject = topper_by_year(df.dropna(subset=[metric_choice]), year_col, name_col, metric_choice)
@@ -188,23 +184,20 @@ elif mode == "Subjects":
 
     subject = st.sidebar.selectbox("Select a subject", options=["— None —"] + subject_cols, index=0)
     if subject == "— None —":
-        st.info("Select a subject in the sidebar to continue.")
-        st.stop()
+        st.info("Select a subject in the sidebar to continue."); st.stop()
 
     g = (df.groupby(year_col)[subject].mean(numeric_only=True)
            .reset_index().sort_values(year_col))
     g.columns = ["Year", subject]
     ydom = y_domain(g[subject], pad=5)
-    chart = alt_line(g, x="Year:N", y=alt.Y(f"{subject}:Q"), ydomain=ydom,
+    chart = alt_line(g, x_field="Year", y_field=subject, ydomain=ydom,
                      title=f"Average yearly marks — {subject}")
     st.altair_chart(chart, use_container_width=True)
 
-    # Per-year toppers for this subject
     st.subheader(f"🥇 Per-Year Topper — {subject}")
     toppers_subject = topper_by_year(df.dropna(subset=[subject]), year_col, name_col, subject)
     st.dataframe(toppers_subject.rename(columns={year_col: "Year"}), hide_index=True, use_container_width=True)
 
-    # Per-year toppers overall
     if "_OverallPct" in df.columns:
         st.subheader("🏆 Per-Year Topper — Overall")
         toppers_overall = topper_by_year(df, year_col, name_col, "_OverallPct")
@@ -221,8 +214,7 @@ elif mode == "Gender":
     compare = st.sidebar.checkbox("Compare genders for this subject", value=False)
 
     if subject == "— None —":
-        st.info("Select a subject in the sidebar to continue.")
-        st.stop()
+        st.info("Select a subject in the sidebar to continue."); st.stop()
 
     if compare:
         comp = (
@@ -234,21 +226,19 @@ elif mode == "Gender":
         comp[year_col] = comp[year_col].astype(int)
         comp.rename(columns={year_col: "Year", gender_col: "Gender"}, inplace=True)
 
-        # Color mapping (boys black, girls pink, others contrasting)
         domain, rng = gender_color_map(comp["Gender"].unique().tolist())
         ydom = y_domain(comp[subject], pad=5)
 
         chart = alt_line(
-            comp, x="Year:N", y=alt.Y(f"{subject}:Q"),
-            color="Gender:N", ydomain=ydom,
+            comp, x_field="Year", y_field=subject,
+            color_field="Gender", ydomain=ydom,
             title=f"Yearly average — {subject} (by gender)",
             color_domain=domain, color_range=rng
         )
         st.altair_chart(chart, use_container_width=True)
     else:
         if selected_gender == "— None —":
-            st.info("Select a gender or enable **Compare**.")
-            st.stop()
+            st.info("Select a gender or enable **Compare**."); st.stop()
 
         g = (
             df[df[gender_col].astype(str) == selected_gender]
@@ -260,7 +250,6 @@ elif mode == "Gender":
         g.columns = ["Year", subject]
         ydom = y_domain(g[subject], pad=5)
 
-        # Single-gender color: boys black, girls pink, others contrasting
         low = selected_gender.lower()
         if low.startswith(("m","boy","male")):
             line_color = "#000000"
@@ -269,18 +258,15 @@ elif mode == "Gender":
         else:
             line_color = "#1f77b4"
 
-        chart = alt.Chart(g).mark_line(point=True, color=line_color).encode(
-            x=alt.X("Year:N", axis=alt.Axis(title="Year", format='d')),
-            y=alt.Y(f"{subject}:Q", scale=alt.Scale(domain=ydom))
-        ).properties(title=f"Yearly average — {subject} ({selected_gender})").interactive()
+        chart = alt_line(g, x_field="Year", y_field=subject, ydomain=ydom,
+                         title=f"Yearly average — {subject} ({selected_gender})",
+                         line_color=line_color)
         st.altair_chart(chart, use_container_width=True)
 
-    # Per-year toppers for this subject (overall)
     st.subheader(f"🥇 Per-Year Topper — {subject}")
     toppers_subject = topper_by_year(df.dropna(subset=[subject]), year_col, name_col, subject)
     st.dataframe(toppers_subject.rename(columns={year_col: "Year"}), hide_index=True, use_container_width=True)
 
-    # Per-year toppers overall
     if "_OverallPct" in df.columns:
         st.subheader("🏆 Per-Year Topper — Overall")
         toppers_overall = topper_by_year(df, year_col, name_col, "_OverallPct")
