@@ -10,6 +10,7 @@ show_more = st.checkbox("Show more details")
 
 st.write(f"👋 Hi **{name or 'friend'}**! You selected **{level}** and age **{age}**.")
 
+**hey**
 if show_more:
     st.success("This is a conditional block controlled by the checkbox.")
 
