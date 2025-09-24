@@ -3,7 +3,7 @@ import streamlit as st
 st.set_page_config(page_title="Widgets 101", layout="wide")
 st.title("🎛️ Widgets & Instant Feedback")
 
-name = st.text_input("Your name", placeholder="Type here...")
+name = st.text_input("Your name", placeholder="Enter your name:")
 level = st.selectbox("Your experience level", ["Beginner", "Intermediate", "Advanced"])
 age = st.slider("Your age", 10, 70, 25)
 show_more = st.checkbox("Show more details")
