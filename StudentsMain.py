@@ -4,150 +4,224 @@ import pandas as pd
 import numpy as np
 import altair as alt
 
-# ----------------- Page setup -----------------
+# ============== PAGE SETUP ==============
 st.set_page_config(page_title="Student Performance Dashboard", layout="wide")
 st.title("🎓 Student Performance Dashboard")
 
-# ----------------- Helpers -----------------
-RESERVED_COLS = {"StudentID", "Name", "Student", "Batch", "Class", "Year", "Gender"}
-
-def detect_columns(df: pd.DataFrame):
-    cols = {c.lower(): c for c in df.columns}
-    name_col = next((cols[k] for k in ["name", "student", "student_name"] if k in cols), None)
-    year_col = next((cols[k] for k in ["year", "class_year", "grade_year"] if k in cols), None)
-    gender_col = next((cols[k] for k in ["gender", "sex"] if k in cols), None)
-    numeric_cols = df.select_dtypes(include=["number"]).columns.tolist()
-    subject_cols = [c for c in numeric_cols if c not in RESERVED_COLS]
-    return name_col, year_col, gender_col, subject_cols
-
-def overall_percentage(row: pd.Series, subject_cols):
-    return row[subject_cols].astype(float).mean(skipna=True)
-
-def y_domain(series: pd.Series, pad=5):
-    s = series.dropna()
-    if s.empty:
-        return None
-    lo, hi = float(s.min()), float(s.max())
-    return [lo - pad, hi + pad] if lo != hi else [lo - pad, hi + pad]
-
-def topper_by_year(df, year_col, name_col, value_col):
-    def pick_top(g):
-        idx = g[value_col].astype(float).idxmax()
-        row = g.loc[idx]
-        return pd.Series({"Top Student": row[name_col], "Score": float(row[value_col])})
-    return df.groupby(year_col).apply(pick_top).reset_index()
-
-def gender_color_map(unique_genders):
-    domain, rng = [], []
-    for g in unique_genders:
-        low = g.lower()
-        if low.startswith(("m", "boy", "male")):
-            domain.append(g); rng.append("#000000")  # black
-        elif low.startswith(("f", "girl", "female")):
-            domain.append(g); rng.append("#ff4da6")  # pink
-        else:
-            domain.append(g); rng.append("#1f77b4")  # blue
-    return domain, rng
-
-def alt_line(df, x_field, y_field, color_field=None, ydomain=None, title=None,
-             color_domain=None, color_range=None, line_color=None):
-    base = alt.Chart(df).mark_line(point=True)
-    enc = {
-        "x": alt.X(x_field, type="ordinal", axis=alt.Axis(title="Year", format="d")),
-        "y": alt.Y(y_field, type="quantitative",
-                   scale=alt.Scale(domain=ydomain) if ydomain else alt.Undefined),
-    }
-    if color_field:
-        if color_domain and color_range:
-            enc["color"] = alt.Color(color_field,
-                                     scale=alt.Scale(domain=color_domain, range=color_range),
-                                     legend=alt.Legend(title=color_field))
-        else:
-            enc["color"] = alt.Color(color_field)
-    chart = base.encode(**enc)
-    if line_color and not color_field:
-        chart = chart.mark_line(point=True, color=line_color).encode(**enc)
-    return chart.properties(title=title).interactive()
-
-# ----------------- Sidebar: Upload -----------------
+# ============== SIDEBAR: UPLOAD ==============
 st.sidebar.header("Upload CSV")
-uploaded = st.sidebar.file_uploader("Upload student marks file", type=["csv"])
-if uploaded is None:
+file = st.sidebar.file_uploader("Upload student marks CSV", type=["csv"])
+
+# Show welcome until upload
+if not file:
     st.info("👋 Welcome! Please upload your CSV to begin.")
     st.stop()
 
-df = pd.read_csv(uploaded)
-name_col, year_col, gender_col, subject_cols = detect_columns(df)
+# Read CSV
+df = pd.read_csv(file)
 
-if subject_cols:
-    df["_OverallPct"] = df.apply(lambda r: overall_percentage(r, subject_cols), axis=1)
+# ============== BASIC COLUMN DETECTION (KEEP IT SIMPLE) ==============
+# Try to find common names for key columns
+cols_lower = {c.lower(): c for c in df.columns}
+name_col   = cols_lower.get("name", cols_lower.get("student", None))
+year_col   = cols_lower.get("year", None)
+gender_col = cols_lower.get("gender", cols_lower.get("sex", None))
 
-# Ensure year is int (no commas)
-if year_col:
-    df[year_col] = pd.to_numeric(df[year_col], errors="coerce").dropna().astype(int)
+# Subjects = numeric columns that are not the typical ID/meta columns
+reserved = {"studentid", "name", "student", "batch", "class", "year", "gender", "sex"}
+numeric_cols = df.select_dtypes(include=["number"]).columns
+subject_cols = [c for c in numeric_cols if c.lower() not in reserved]
 
-# ----------------- Center Radio -----------------
-col1, col2, col3 = st.columns([1, 2, 1])
-with col2:
-    mode = st.radio("Choose", ["Students", "Subjects", "Gender"], index=1)
+# Simple safety checks
+if name_col is None or year_col is None or len(subject_cols) == 0:
+    st.error("Please ensure your CSV has: a Name/Student column, a Year column, and numeric subject columns.")
+    st.stop()
 
-# ----------------- Sidebar Controls -----------------
+# Make Year a clean integer (prevents 2,000 formatting)
+df[year_col] = pd.to_numeric(df[year_col], errors="coerce").dropna().astype(int)
+
+# Overall % per row (mean across subject columns)
+df["_OverallPct"] = df[subject_cols].mean(axis=1)
+
+# ============== CENTER RADIO (MAIN AREA) ==============
+c1, c2, c3 = st.columns([1, 2, 1])
+with c2:
+    mode = st.radio("Choose a view", ["Students", "Subjects", "Gender"], index=0)
+
+# ============== SMALL UTILS (KEPT INLINE & SIMPLE) ==============
+def y_limits(series, pad=5):
+    """Return [min-5, max+5] for clearer variation."""
+    s = pd.to_numeric(series, errors="coerce").dropna()
+    if s.empty:
+        return None
+    lo, hi = float(s.min()), float(s.max())
+    return [lo - pad, hi + pad]
+
+def per_year_toppers(full_df, value_col):
+    """
+    For each year, find the student with the highest 'value_col'.
+    Returns a table with Year, Top Student, Score.
+    """
+    # idxmax per group -> pick that row
+    idx = full_df.groupby(year_col)[value_col].idxmax()
+    best = full_df.loc[idx, [year_col, name_col, value_col]].sort_values(year_col)
+    best.columns = ["Year", "Top Student", "Score"]
+    # Round score for neatness
+    best["Score"] = best["Score"].round(2)
+    return best
+
+def boys_girls_color(label: str) -> str:
+    """Black for boys, pink for girls, a contrasting blue otherwise."""
+    if label is None:
+        return "#1f77b4"
+    low = str(label).lower()
+    if low.startswith(("m", "boy", "male")):
+        return "#000000"
+    if low.startswith(("f", "girl", "female")):
+        return "#ff4da6"
+    return "#1f77b4"
+
+# ============== VIEWS ==============
 if mode == "Students":
-    student = st.sidebar.selectbox("Select a student", ["— None —"] + sorted(df[name_col].unique()))
-    metric_choice = st.sidebar.selectbox("Plot", ["— None —", "Overall Percentage"] + subject_cols)
+    # ---- Controls in sidebar ----
+    student_list = sorted(df[name_col].astype(str).unique())
+    student = st.sidebar.selectbox("Select a student", ["— None —"] + student_list, index=0)
+    metric  = st.sidebar.selectbox("Performance", ["— None —", "Overall Percentage"] + subject_cols, index=0)
 
-    if student != "— None —" and metric_choice != "— None —":
-        sdf = df[df[name_col] == student].sort_values(year_col)
-        plot_col = "_OverallPct" if metric_choice == "Overall Percentage" else metric_choice
-        ydom = y_domain(sdf[plot_col], pad=5)
-        chart_df = sdf[[year_col, plot_col]].rename(columns={year_col: "Year", plot_col: metric_choice})
-        st.altair_chart(alt_line(chart_df, "Year", metric_choice, ydomain=ydom,
-                                 title=f"{student} — {metric_choice}"), use_container_width=True)
+    # ---- Guard ----
+    if student == "— None —" or metric == "— None —":
+        st.info("Use the sidebar to select a student and what to plot.")
+        st.stop()
 
-        st.subheader("🏆 Per-Year Topper — Overall")
-        st.dataframe(topper_by_year(df, year_col, name_col, "_OverallPct"), hide_index=True)
-        if metric_choice != "Overall Percentage":
-            st.subheader(f"🥇 Per-Year Topper — {metric_choice}")
-            st.dataframe(topper_by_year(df, year_col, name_col, metric_choice), hide_index=True)
+    # ---- Data for chart ----
+    subdf = df[df[name_col].astype(str) == student].copy().sort_values(year_col)
+    plot_col = "_OverallPct" if metric == "Overall Percentage" else metric
+    chart_df = subdf[[year_col, plot_col]].rename(columns={year_col: "Year", plot_col: metric})
+    ylim = y_limits(chart_df[metric])
+
+    # ---- Chart (Altair) ----
+    chart = (
+        alt.Chart(chart_df)
+        .mark_line(point=True)
+        .encode(
+            x=alt.X("Year:O", axis=alt.Axis(title="Year", format="d")),  # no commas
+            y=alt.Y(f"{metric}:Q", scale=alt.Scale(domain=ylim)),
+            tooltip=["Year", metric]
+        )
+        .properties(title=f"{student} — {metric}")
+        .interactive()
+    )
+    st.altair_chart(chart, use_container_width=True)
+
+    # ---- Toppers ----
+    st.subheader("🏆 Per-Year Topper — Overall")
+    st.dataframe(per_year_toppers(df, "_OverallPct"), hide_index=True, use_container_width=True)
+
+    if metric != "Overall Percentage":
+        st.subheader(f"🥇 Per-Year Topper — {metric}")
+        st.dataframe(per_year_toppers(df.dropna(subset=[metric]), metric),
+                     hide_index=True, use_container_width=True)
 
 elif mode == "Subjects":
-    subject = st.sidebar.selectbox("Select a subject", ["— None —"] + subject_cols)
-    if subject != "— None —":
-        g = df.groupby(year_col)[subject].mean().reset_index()
-        ydom = y_domain(g[subject], pad=5)
-        st.altair_chart(alt_line(g, year_col, subject, ydomain=ydom,
-                                 title=f"Average yearly marks — {subject}"), use_container_width=True)
+    # ---- Controls ----
+    subject = st.sidebar.selectbox("Select a subject", ["— None —"] + subject_cols, index=0)
+    if subject == "— None —":
+        st.info("Use the sidebar to pick a subject.")
+        st.stop()
 
-        st.subheader(f"🥇 Per-Year Topper — {subject}")
-        st.dataframe(topper_by_year(df, year_col, name_col, subject), hide_index=True)
+    # Average marks per year across all students
+    g = df.groupby(year_col)[subject].mean().reset_index().rename(columns={year_col: "Year"})
+    ylim = y_limits(g[subject])
 
-        st.subheader("🏆 Per-Year Topper — Overall")
-        st.dataframe(topper_by_year(df, year_col, name_col, "_OverallPct"), hide_index=True)
+    chart = (
+        alt.Chart(g)
+        .mark_line(point=True)
+        .encode(
+            x=alt.X("Year:O", axis=alt.Axis(title="Year", format="d")),
+            y=alt.Y(f"{subject}:Q", scale=alt.Scale(domain=ylim)),
+            tooltip=["Year", subject]
+        )
+        .properties(title=f"Average yearly marks — {subject}")
+        .interactive()
+    )
+    st.altair_chart(chart, use_container_width=True)
+
+    # Toppers (subject and overall)
+    st.subheader(f"🥇 Per-Year Topper — {subject}")
+    st.dataframe(per_year_toppers(df.dropna(subset=[subject]), subject),
+                 hide_index=True, use_container_width=True)
+
+    st.subheader("🏆 Per-Year Topper — Overall")
+    st.dataframe(per_year_toppers(df, "_OverallPct"),
+                 hide_index=True, use_container_width=True)
 
 elif mode == "Gender":
-    subject = st.sidebar.selectbox("Select subject", ["— None —"] + subject_cols)
-    compare = st.sidebar.checkbox("Compare genders")
-    if subject != "— None —":
-        if compare:
-            comp = df.groupby([year_col, gender_col])[subject].mean().reset_index()
-            domain, rng = gender_color_map(comp[gender_col].unique())
-            ydom = y_domain(comp[subject], pad=5)
-            st.altair_chart(alt_line(comp, year_col, subject, color_field=gender_col,
-                                     ydomain=ydom, title=f"{subject} by Gender",
-                                     color_domain=domain, color_range=rng),
-                            use_container_width=True)
-        else:
-            gender = st.sidebar.selectbox("Select gender", ["— None —"] + sorted(df[gender_col].unique()))
-            if gender != "— None —":
-                g = df[df[gender_col] == gender].groupby(year_col)[subject].mean().reset_index()
-                ydom = y_domain(g[subject], pad=5)
-                color = "#000000" if gender.lower().startswith("m") else "#ff4da6"
-                st.altair_chart(alt_line(g, year_col, subject, ydomain=ydom,
-                                         title=f"{subject} — {gender}", line_color=color),
-                                use_container_width=True)
+    # ---- Controls ----
+    subject = st.sidebar.selectbox("Select subject", ["— None —"] + subject_cols, index=0)
+    compare = st.sidebar.checkbox("Compare genders", value=False)
 
-        st.subheader(f"🥇 Per-Year Topper — {subject}")
-        st.dataframe(topper_by_year(df, year_col, name_col, subject), hide_index=True)
+    if subject == "— None —":
+        st.info("Use the sidebar to pick a subject (and compare if you want).")
+        st.stop()
 
-        st.subheader("🏆 Per-Year Topper — Overall")
-        st.dataframe(topper_by_year(df, year_col, name_col, "_OverallPct"), hide_index=True)
+    if compare:
+        # Multi-gender comparison lines
+        comp = df.groupby([year_col, gender_col])[subject].mean().reset_index()
+        comp = comp.rename(columns={year_col: "Year", gender_col: "Gender"})
+        ylim = y_limits(comp[subject])
+
+        # Color scale: boys black, girls pink, others blue
+        unique_g = comp["Gender"].dropna().astype(str).unique().tolist()
+        domain = unique_g
+        range_ = [boys_girls_color(g) for g in unique_g]
+
+        chart = (
+            alt.Chart(comp)
+            .mark_line(point=True)
+            .encode(
+                x=alt.X("Year:O", axis=alt.Axis(title="Year", format="d")),
+                y=alt.Y(f"{subject}:Q", scale=alt.Scale(domain=ylim)),
+                color=alt.Color("Gender:N", scale=alt.Scale(domain=domain, range=range_), legend=alt.Legend(title="Gender")),
+                tooltip=["Year", "Gender", subject]
+            )
+            .properties(title=f"Yearly average — {subject} (by gender)")
+            .interactive()
+        )
+        st.altair_chart(chart, use_container_width=True)
+
+    else:
+        # Single gender line
+        gender_list = sorted(df[gender_col].astype(str).unique())
+        gender = st.sidebar.selectbox("Select gender", ["— None —"] + gender_list, index=0)
+        if gender == "— None —":
+            st.info("Pick a gender or enable Compare.")
+            st.stop()
+
+        g = (
+            df[df[gender_col].astype(str) == gender]
+            .groupby(year_col)[subject].mean().reset_index()
+            .rename(columns={year_col: "Year"})
+        )
+        ylim = y_limits(g[subject])
+
+        chart = (
+            alt.Chart(g)
+            .mark_line(point=True, color=boys_girls_color(gender))
+            .encode(
+                x=alt.X("Year:O", axis=alt.Axis(title="Year", format="d")),
+                y=alt.Y(f"{subject}:Q", scale=alt.Scale(domain=ylim)),
+                tooltip=["Year", subject]
+            )
+            .properties(title=f"Yearly average — {subject} ({gender})")
+            .interactive()
+        )
+        st.altair_chart(chart, use_container_width=True)
+
+    # Toppers (subject + overall across whole dataset)
+    st.subheader(f"🥇 Per-Year Topper — {subject}")
+    st.dataframe(per_year_toppers(df.dropna(subset=[subject]), subject),
+                 hide_index=True, use_container_width=True)
+
+    st.subheader("🏆 Per-Year Topper — Overall")
+    st.dataframe(per_year_toppers(df, "_OverallPct"),
+                 hide_index=True, use_container_width=True)
