@@ -4,51 +4,50 @@ import pandas as pd
 import numpy as np
 import altair as alt
 
-# ============== PAGE SETUP ==============
+
 st.set_page_config(page_title="Student Performance Dashboard", layout="wide")
 st.title("🎓 Student Performance Dashboard")
 
-# ============== SIDEBAR: UPLOAD ==============
+
 st.sidebar.header("Upload CSV")
 file = st.sidebar.file_uploader("Upload student marks CSV", type=["csv"])
 
-# Show welcome until upload
+
 if not file:
     st.info("👋 Welcome! Please upload your CSV to begin.")
     st.stop()
 
-# Read CSV
+
 df = pd.read_csv(file)
 
-# ============== BASIC COLUMN DETECTION (KEEP IT SIMPLE) ==============
-# Try to find common names for key columns
+
 cols_lower = {c.lower(): c for c in df.columns}
 name_col   = cols_lower.get("name", cols_lower.get("student", None))
 year_col   = cols_lower.get("year", None)
 gender_col = cols_lower.get("gender", cols_lower.get("sex", None))
 
-# Subjects = numeric columns that are not the typical ID/meta columns
+
 reserved = {"studentid", "name", "student", "batch", "class", "year", "gender", "sex"}
 numeric_cols = df.select_dtypes(include=["number"]).columns
 subject_cols = [c for c in numeric_cols if c.lower() not in reserved]
 
-# Simple safety checks
+
 if name_col is None or year_col is None or len(subject_cols) == 0:
     st.error("Please ensure your CSV has: a Name/Student column, a Year column, and numeric subject columns.")
     st.stop()
 
-# Make Year a clean integer (prevents 2,000 formatting)
+
 df[year_col] = pd.to_numeric(df[year_col], errors="coerce").dropna().astype(int)
 
-# Overall % per row (mean across subject columns)
+
 df["_OverallPct"] = df[subject_cols].mean(axis=1)
 
-# ============== CENTER RADIO (MAIN AREA) ==============
+
 c1, c2, c3 = st.columns([1, 2, 1])
 with c2:
     mode = st.radio("Choose a view", ["Students", "Subjects", "Gender"], index=0)
 
-# ============== SMALL UTILS (KEPT INLINE & SIMPLE) ==============
+# ============== setting the Range ==============
 def y_limits(series, pad=5):
     """Return [min-5, max+5] for clearer variation."""
     s = pd.to_numeric(series, errors="coerce").dropna()
@@ -83,23 +82,23 @@ def boys_girls_color(label: str) -> str:
 
 # ============== VIEWS ==============
 if mode == "Students":
-    # ---- Controls in sidebar ----
+   
     student_list = sorted(df[name_col].astype(str).unique())
     student = st.sidebar.selectbox("Select a student", ["— None —"] + student_list, index=0)
     metric  = st.sidebar.selectbox("Performance", ["— None —", "Overall Percentage"] + subject_cols, index=0)
 
-    # ---- Guard ----
+    
     if student == "— None —" or metric == "— None —":
         st.info("Use the sidebar to select a student and what to plot.")
         st.stop()
 
-    # ---- Data for chart ----
+    
     subdf = df[df[name_col].astype(str) == student].copy().sort_values(year_col)
     plot_col = "_OverallPct" if metric == "Overall Percentage" else metric
     chart_df = subdf[[year_col, plot_col]].rename(columns={year_col: "Year", plot_col: metric})
     ylim = y_limits(chart_df[metric])
 
-    # ---- Chart (Altair) ----
+    
     chart = (
         alt.Chart(chart_df)
         .mark_line(point=True)
