@@ -59,6 +59,6 @@ with col3:
 
 tab1, tab2 = st.tabs(["Summary", "Chart"])
 with tab1:
-    st.write(df.describe().T)
+    st.write(df.describe())
 with tab2:
     st.bar_chart(df.set_index("Student")[subject])
