@@ -4,9 +4,6 @@ import pandas as pd
 st.set_page_config(page_title="Student Dashboard", layout="wide")
 st.title("📚 Multi-Class Student Marks Dashboard")
 
-# ---------------------------
-# Fixed datasets for each class
-# ---------------------------
 class_data = {
     "Class 10": pd.DataFrame({
         "Student": ["Alice", "Bob", "Charlie", "David"],
@@ -29,30 +26,26 @@ class_data = {
     })
 }
 
-# ---------------------------
-# Sidebar: class & subject selection
-# ---------------------------
+
 st.sidebar.header("Filters")
 cls_selected = st.sidebar.selectbox("Select Class", ["(None)"] + list(class_data.keys()))
 
-# 1) No class → show only welcome
+
 if cls_selected == "(None)":
     st.info("👋 Welcome! Please select a class from the sidebar to continue.")
     st.stop()
 
-# 2) Class selected → load df, but require subject selection before showing anything else
+
 df = class_data[cls_selected]
 subjects = [c for c in df.columns if c != "Student"]
 subject = st.sidebar.selectbox("Select Subject", ["(None)"] + subjects)
 
-# If subject not chosen yet → show prompt and stop
+
 if subject == "(None)":
     st.info(f"✅ You selected **{cls_selected}**. Now pick a **Subject** from the sidebar to see results.")
     st.stop()
 
-# ---------------------------
-# Now show the rest ONLY after subject is chosen
-# ---------------------------
+
 st.subheader(f"📊 Marks for {cls_selected}")
 st.dataframe(df, use_container_width=True)
 
